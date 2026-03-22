@@ -1,0 +1,311 @@
+getgenv().SHAMPO = true
+if game.GameId ~= 4652005960 then return end
+
+local repo = "https://raw.githubusercontent.com/duckyshampao/ShampoV1/main/"
+local Library = loadstring(game:HttpGet(repo.."V1"))()
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UIS = game:GetService("UserInputService")
+local VIM = game:GetService("VirtualInputManager")
+local LP = Players.LocalPlayer
+local TweenService = game:GetService("TweenService")
+
+--------------------------------------------------
+-- WINDOW & TABS
+--------------------------------------------------
+local Window = Library:CreateWindow({
+    Title = "Shampo Hub | V1",
+    Footer = "Authority | Mira Yuki",
+    NotifySide = "Right"
+})
+
+local Tabs = {
+    Main = Window:AddTab("Main", "Main"),
+    Skills = Window:AddTab("Skills", "bolt"),
+    UI = Window:AddTab("UI Settings", "settings"),
+}
+
+local FarmBox = Tabs.Main:AddLeftGroupbox("Combat Tools")
+local AutoBox = Tabs.Main:AddRightGroupbox("Automation")
+
+--------------------------------------------------
+-- TOOL SYSTEM (Style & Mode)
+--------------------------------------------------
+getgenv().SelectedWeapon = nil
+getgenv().CombatWeapon = nil
+
+local function fetchTools()
+    local tool_table = {}
+    if LP:FindFirstChild("Backpack") then
+        for _, v in pairs(LP.Backpack:GetChildren()) do
+            if v:IsA("Tool") then table.insert(tool_table, v.Name) end
+        end
+    end
+    return tool_table
+end
+
+local toolDrop = FarmBox:AddDropdown("RoundTool", {
+    Values = fetchTools(),
+    Text = "Round Tool (Mode/Buff)",
+    Callback = function(v) getgenv().SelectedWeapon = v end
+})
+
+local combatDrop = FarmBox:AddDropdown("CombatTool", {
+    Values = fetchTools(),
+    Text = "Combat Tool (Style)",
+    Callback = function(v) getgenv().CombatWeapon = v end
+})
+
+FarmBox:AddButton("Refresh Tools", function()
+    local tools = fetchTools()
+    toolDrop:SetValues(tools)
+    combatDrop:SetValues(tools)
+end)
+
+--------------------------------------------------
+-- AUTO HIT & ATTACH
+--------------------------------------------------
+local AutoHit = false
+local StopAt = 50
+getgenv().Height = -6.5
+getgenv().Attach = false
+
+task.spawn(function()
+    while true do
+        task.wait(0.01)
+        if AutoHit and not Library.Open then
+            local gui = LP.PlayerGui:FindFirstChild("Main")
+            if gui and gui.HUD.Stamina.Clipping.AbsoluteSize.X / gui.HUD.Stamina.AbsoluteSize.X * 100 > StopAt then
+                VIM:SendMouseButtonEvent(0, 0, 0, true, game, 0)
+                VIM:SendMouseButtonEvent(0, 0, 0, false, game, 0)
+            end
+        end
+    end
+end)
+
+local HitToggle = FarmBox:AddToggle("AutoHit", {Text = "Smart Auto Hit", Default = false, Callback = function(v) AutoHit = v end})
+HitToggle:AddKeyPicker("AutoHitBind", {Default = "G", NoUI = false, Text = "Auto Hit", SyncToggleState = true})
+
+FarmBox:AddSlider("StopPercent", {Text = "Stop at %", Min = 0, Max = 100, Default = 50, Callback = function(v) StopAt = v end})
+
+local AttachToggle = FarmBox:AddToggle("Attach", {
+    Text = "Attach (Back)",
+    Default = false,
+    Callback = function(v)
+        getgenv().Attach = v
+        if getgenv().AttachConn then getgenv().AttachConn:Disconnect() end
+        if not v then return end
+        getgenv().AttachConn = RunService.Heartbeat:Connect(function()
+            local char = LP.Character
+            if not char or not getgenv().Attach then return end
+            local hrp = char:FindFirstChild("HumanoidRootPart")
+            local mobs = workspace:FindFirstChild("Mobs")
+            if not hrp or not mobs then return end
+            local closest, dist = nil, math.huge
+            for _, m in pairs(mobs:GetChildren()) do
+                local mHrp = m:FindFirstChild("HumanoidRootPart")
+                local hum = m:FindFirstChildWhichIsA("Humanoid")
+                if mHrp and hum and hum.Health > 0 then
+                    local d = (hrp.Position - mHrp.Position).Magnitude
+                    if d < dist then dist = d closest = mHrp end
+                end
+            end
+            if closest then
+                local pos = closest.Position + closest.CFrame.LookVector * -2.5 + Vector3.new(0, getgenv().Height, 0)
+                hrp.CFrame = CFrame.new(pos, closest.Position)
+            end
+        end)
+    end
+})
+AttachToggle:AddKeyPicker("AttachBind", {Default = "H", NoUI = false, Text = "Attach", SyncToggleState = true})
+FarmBox:AddSlider("HeightVal", {Text = "Height Offset", Min = -10, Max = 10, Default = -6.5, Callback = function(v) getgenv().Height = v end})
+
+--------------------------------------------------
+-- AUTOMATION (Proceed & Round Tool)
+--------------------------------------------------
+local UseEachRound = false
+local UsedThisRound = false
+local AutoProceed = false
+
+local function click_ui(btn)
+    if not btn or not btn.Visible then return end
+    local x = btn.AbsolutePosition.X + btn.AbsoluteSize.X / 2
+    local y = btn.AbsolutePosition.Y + 105 
+    VIM:SendMouseButtonEvent(x, y, 0, true, btn, 1)
+    VIM:SendMouseButtonEvent(x, y, 0, false, btn, 1)
+end
+
+local function useRoundTool()
+    if not getgenv().SelectedWeapon then return end
+    local char = LP.Character
+    local tool = LP.Backpack:FindFirstChild(getgenv().SelectedWeapon)
+    if char and tool then char.Humanoid:EquipTool(tool) end
+    task.wait(0.4)
+    VIM:SendMouseButtonEvent(0, 0, 0, true, game, 0)
+    VIM:SendMouseButtonEvent(0, 0, 0, false, game, 0)
+    task.wait(0.5)
+    if getgenv().CombatWeapon then 
+        local cTool = LP.Backpack:FindFirstChild(getgenv().CombatWeapon)
+        if char and cTool then char.Humanoid:EquipTool(cTool) end
+    end
+end
+
+RunService.Heartbeat:Connect(function()
+    if AutoProceed then
+        local gui = LP:FindFirstChild("PlayerGui")
+        if gui then
+            pcall(function()
+                local tr = gui:FindFirstChild("TrialResult")
+                if tr and tr.Frame.Visible then click_ui(tr.Frame.Container.Back.Back.Button) end
+                local tu = gui:FindFirstChild("TrialUI")
+                if tu and tu.Frame.Visible then click_ui(tu.Frame.Container.Container.Right.Start.Button) end
+            end)
+        end
+    end
+
+    if UseEachRound then
+        local mobs = workspace:FindFirstChild("Mobs")
+        local alive = false
+        if mobs then
+            for _, m in pairs(mobs:GetChildren()) do
+                if m:FindFirstChildWhichIsA("Humanoid") and m.Humanoid.Health > 0 then alive = true break end
+            end
+        end
+        
+        if alive and not UsedThisRound then
+            UsedThisRound = true
+            task.delay(5, function() if UseEachRound and UsedThisRound then useRoundTool() end end)
+        elseif not alive then
+            UsedThisRound = false
+        end
+    end
+end)
+
+AutoBox:AddToggle("RoundToggle", {Text = "Use Tool Each Round", Default = false, Callback = function(v) UseEachRound = v UsedThisRound = false end})
+local ProceedToggle = AutoBox:AddToggle("AutoProceed", {Text = "Auto Proceed Stage", Default = false, Callback = function(v) AutoProceed = v end})
+ProceedToggle:AddKeyPicker("ProceedBind", {Default = "Z", NoUI = false, Text = "Auto Proceed", SyncToggleState = true})
+
+--------------------------------------------------
+-- SKILL SYSTEM (Uses Roblox Inventory)
+--------------------------------------------------
+-- Create a simple UI for the Cooldown Number
+local CooldownGui = Instance.new("ScreenGui", game.CoreGui)
+CooldownGui.Name = "SkillCooldownNum"
+CooldownGui.ResetOnSpawn = false
+
+local NumLabel = Instance.new("TextLabel", CooldownGui)
+NumLabel.Name = "Number"
+NumLabel.Size = UDim2.new(0, 100, 0, 100)
+NumLabel.Position = UDim2.new(0.5, -50, 0.5, -50)
+NumLabel.BackgroundTransparency = 1
+NumLabel.Text = ""
+NumLabel.TextColor3 = Color3.new(1, 1, 1)
+NumLabel.TextStrokeTransparency = 0
+NumLabel.TextStrokeColor3 = Color3.new(0, 0, 0)
+NumLabel.TextScaled = true
+NumLabel.Font = Enum.Font.GothamBold
+NumLabel.Visible = false
+
+local function ShowCooldownNumber(seconds)
+    task.spawn(function()
+        NumLabel.Visible = true
+        for i = seconds, 0, -1 do
+            NumLabel.Text = tostring(i)
+            task.wait(1)
+        end
+        NumLabel.Visible = false
+    end)
+end
+
+local function GetInventoryTools()
+    -- Returns tools in the order they appear in the Backpack (Slots 1-10)
+    local tools = {}
+    if LP:FindFirstChild("Backpack") then
+        for _, v in pairs(LP.Backpack:GetChildren()) do
+            if v:IsA("Tool") then
+                table.insert(tools, v)
+            end
+        end
+    end
+    return tools
+end
+
+--------------------------------------------------
+-- AUTO CYCLE TOGGLE (2 to 7)
+--------------------------------------------------
+local AutoCycleRunning = false
+
+AutoBox:AddToggle("AutoCycle", {
+    Text = "Auto Cycle Skills (Slots 2-7)",
+    Default = false,
+    Callback = function(v)
+        AutoCycleRunning = v
+        if v then
+            task.spawn(function()
+                while AutoCycleRunning do
+                    local tools = GetInventoryTools()
+                    
+                    -- Loop from Slot 2 to Slot 7
+                    for i = 2, 7 do
+                        if not AutoCycleRunning then break end
+                        
+                        local tool = tools[i]
+                        if tool then
+                            local char = LP.Character
+                            if not char then break end
+                            
+                            -- 1. Use Skill
+                            print("Using Slot " .. i .. ": " .. tool.Name)
+                            char.Humanoid:EquipTool(tool)
+                            task.wait(0.3)
+                            
+                            VIM:SendMouseButtonEvent(0, 0, 0, true, game, 0)
+                            VIM:SendMouseButtonEvent(0, 0, 0, false, game, 0)
+                            
+                            -- 2. Show Cooldown & Switch to Combat
+                            -- We show 7 seconds as requested
+                            ShowCooldownNumber(7)
+                            
+                            -- Switch to Combat tool immediately
+                            task.wait(0.5)
+                            if getgenv().CombatWeapon then
+                                local cTool = LP.Backpack:FindFirstChild(getgenv().CombatWeapon)
+                                if cTool then char.Humanoid:EquipTool(cTool) end
+                            end
+                            
+                            -- Wait the full duration before next skill
+                            task.wait(7)
+                        else
+                            warn("No tool found in slot " .. i)
+                        end
+                    end
+                    
+                    -- Logic: "after the 7 second u use skill again and repeat till ur at 7 and use the skill it completly goes to combat"
+                    -- Means stop after Slot 7 is used.
+                    if AutoCycleRunning then
+                        print("Reached Slot 7. Stopping Cycle.")
+                        AutoCycleRunning = false
+                        -- Ensure Combat is equipped
+                        local char = LP.Character
+                        if char and getgenv().CombatWeapon then
+                            local cTool = LP.Backpack:FindFirstChild(getgenv().CombatWeapon)
+                            if cTool then char.Humanoid:EquipTool(cTool) end
+                        end
+                        break
+                    end
+                end
+            end)
+        end
+    end
+})
+
+--------------------------------------------------
+-- UI SETTINGS
+--------------------------------------------------
+local MenuGroup = Tabs.UI:AddLeftGroupbox("Menu Settings")
+MenuGroup:AddButton("Unload Script", function() 
+    Library:Unload() 
+    if CooldownGui then CooldownGui:Destroy() end
+end)
+Library.ToggleKeybind = Enum.KeyCode.RightShift
